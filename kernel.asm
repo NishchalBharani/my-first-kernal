@@ -1,5 +1,5 @@
-; kernel.asm - Simple 16-bit kernel stub (VGA print + halt)
-; Loaded at 0x7E00, prints on row 1
+; kernel.asm - 16-bit kernel shell (loop echo keys until 'q')
+; Loaded at 0x7E00, prints "Hello...", sets cursor row 2 col 0, loops key echo
 
 BITS 16                    ; 16-bit real mode
 ORG 0                      ; Code starts at offset 0 (physical 0x7E00 from boot)
@@ -7,32 +7,59 @@ ORG 0                      ; Code starts at offset 0 (physical 0x7E00 from boot)
 kernel_start:
     ; Set DS = CS for data access (string in code segment)
     mov ax, cs               ; AX = current code segment (0x07E0)
-    mov ds, ax               ; DS = 0x07E0 (now [bx] points correctly)
+    mov ds, ax               ; DS = 0x07E0
 
     ; Set ES for VGA segment (0xB800 << 4 = 0xB8000 physical)
     mov ax, 0xB800           ; Segment for VGA text buffer
     mov es, ax               ; ES = 0xB800
 
-    ; Set up VGA write: Row 1 (offset 160 bytes = 80 chars * 2 bytes/char)
-    mov di, 160              ; DI = index in buffer (row 1 col 0)
-    mov bx, msg              ; BX = string pointer (now correct via DS)
-    mov ah, 0x07             ; AH = attr (white on black)
+    ; Print "Hello..." on row 1
+    mov di, 160              ; DI = row 1 start
+    mov bx, hello_msg        ; BX = string ptr
+    mov ah, 0x07             ; AH = attr
+print_hello:
+    mov al, [bx]
+    cmp al, 0
+    je set_cursor            ; Done print → set cursor
+    mov [es:di], ax
+    inc bx
+    add di, 2
+    jmp print_hello
 
-print_loop:
-    mov al, [bx]             ; AL = next char (from correct memory!)
-    cmp al, 0                ; Null?
-    je done_print            ; Yes → done
-    mov [es:di], ax          ; Write AX as word: attr high + char low (VGA format!)
-    inc bx                   ; Next char
-    add di, 2                ; Next buffer slot (char + attr = 2 bytes)
-    jmp print_loop
+set_cursor:
+    ; Set cursor to row 2 col 0 (BIOS int 0x10 ah=0x02)
+    mov ah, 0x02             ; Set cursor function
+    mov bh, 0                ; Page 0
+    mov dh, 2                ; Row 2
+    mov dl, 0                ; Col 0
+    int 0x10                 ; Update cursor
 
-done_print:
-    hlt_loop:
-    hlt                      ; Halt
-    jmp hlt_loop             ; Loop forever
+shell_loop:
+    ; Get cursor pos to check room (BIOS int 0x10 ah=0x03)
+    mov ah, 0x03             ; Get cursor
+    mov bh, 0                ; Page 0
+    int 0x10                 ; DX = row:col
+    cmp dh, 23               ; Row <24?
+    jge halt_loop            ; No → halt
 
-msg db 'Hello Nishchal from C Kernel!', 0  ; Null-terminated (reuse your string)
+    ; Wait for key
+    mov ah, 0x00
+    int 0x16                 ; AL=char
+    cmp al, 'q'              ; Quit?
+    je halt_loop             ; Yes → halt
 
-; Pad to 512 bytes (dd will handle, but explicit for clarity)
+    ; Echo char at cursor (int 0x10 ah=0x0E teletype)
+    mov ah, 0x0E             ; Teletype
+    mov bx, 0x07             ; Page/attr
+    int 0x10                 ; Prints AL, advances cursor
+
+    jmp shell_loop           ; Next
+
+halt_loop:
+    hlt
+    jmp halt_loop
+
+hello_msg db 'Hello Nishchal from Kernel! Type keys (q=quit):', 0
+
+; Pad to 512 bytes
 times 512-($-$$) db 0
