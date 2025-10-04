@@ -114,27 +114,68 @@ static const char keymap_shift[128] = {
 };
 
 /* process a completed command */
+/* process a completed command */
 static void handle_command(void) {
     if (input_len == 0) {
         kprint("\n> ");
         return;
     }
     input_buffer[input_len] = 0;
+
     if (kstrcmp(input_buffer, "sysinfo") == 0) {
         kprint("\n--- Kernel Info ---\n");
+        kprint("Nishchal OS Kernel v0.2\n");
         kprint("I am an OS built by Nishchal.\n");
         kprint("I can do small tasks like text display & input.\n");
         kprint("Architecture: i386 (32-bit)\n");
         kprint("-------------------\n");
-    } 
-    else {
+    } else if (kstrcmp(input_buffer, "clear") == 0) {
+        clear_screen();
+        kprint("> ");
+    } else if (kstrcmp(input_buffer, "help") == 0) {
+        kprint("\nAvailable commands:\n");
+        kprint("  sysinfo - Show kernel info\n");
+        kprint("  clear   - Clear the screen\n");
+        kprint("  help    - Show this help menu\n");
+        kprint("  time    - Show a fake system time\n");
+        kprint("  echo X  - Print X\n");
+        kprint("  reboot  - Restart the machine\n");
+    } else if (kstrcmp(input_buffer, "time") == 0) {
+        static unsigned ticks = 0;
+        ticks++;
+        kprint("\nSystem uptime (fake): ");
+        char buf[16];
+        int n = 0;
+        unsigned t = ticks;
+        if (t == 0) buf[n++] = '0';
+        else {
+            char tmp[16];
+            int m = 0;
+            while (t > 0) { tmp[m++] = '0' + (t % 10); t /= 10; }
+            while (m--) buf[n++] = tmp[m];
+        }
+        buf[n] = 0;
+        kprint(buf);
+        kprint(" seconds\n");
+    } else if (input_buffer[0] == 'e' && input_buffer[1] == 'c' &&
+               input_buffer[2] == 'h' && input_buffer[3] == 'o' &&
+               (input_buffer[4] == ' ' || input_buffer[4] == 0)) {
+        kprint("\n");
+        if (input_buffer[4] == ' ') kprint(input_buffer + 5);
+        kprint("\n");
+    } else if (kstrcmp(input_buffer, "reboot") == 0) {
+        kprint("\nRebooting...\n");
+        outb(0x64, 0xFE); /* reset command */
+    } else {
         kprint("\nUnknown command: ");
         kprint(input_buffer);
-        kprint("\n");
+        kprint("\nType 'help' for list.\n");
     }
+
     input_len = 0;
     kprint("> ");
 }
+
 
 /* polling keyboard loop:
    - we read from PS/2 data port 0x60 when status port 0x64 has bit 0 set.
