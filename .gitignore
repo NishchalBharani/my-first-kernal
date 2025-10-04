@@ -1,8 +1,5 @@
-# Build outputs
-*.bin
-*.img
 *.o
-*.elf
-
-# Temp files
-*~
+kernel.elf
+os.iso
+iso/
+qemu*.log

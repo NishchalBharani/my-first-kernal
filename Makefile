@@ -1,34 +1,45 @@
-# Makefile for simple kernel (ASM bootloader + ASM kernel)
-NASM = nasm
-QEMU = qemu-system-i386
+# Makefile - final stable build (polling keyboard, no IRQs)
+CROSS ?=
+ASM = nasm
+CC  = $(CROSS)gcc
+LD  = $(CROSS)ld
+GRUBMKRESCUE = grub-mkrescue
+OBJCOPY = $(CROSS)objcopy)
 
-all: build
+ASMFLAGS = -f elf32
 
-build: boot.bin
+CFLAGS = -m32 -ffreestanding -O2 -fno-builtin -nostdlib -Wall -Wextra \
+	-fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections
 
-# Assemble bootloader
-bootloader.bin: boot.asm
-	$(NASM) -f bin boot.asm -o bootloader.bin
+LDFLAGS = -m elf_i386 -T linker.ld
 
-# Assemble kernel (16-bit flat binary)
-kernel.bin: kernel.asm
-	$(NASM) -f bin kernel.asm -o kernel.bin
+all: os.iso
 
-# Pad kernel to 512 bytes
-pad_kernel: kernel.bin
-	dd if=/dev/zero of=kernel_padded.bin bs=512 count=1 2>/dev/null
-	dd if=kernel.bin of=kernel_padded.bin conv=notrunc 2>/dev/null
-	mv kernel_padded.bin kernel.bin
-	rm -f kernel.bin.orig  # Backup if needed
+boot.o: boot.s
+	$(ASM) $(ASMFLAGS) boot.s -o boot.o
 
-# Combine: bootloader + kernel
-boot.bin: bootloader.bin kernel.bin
-	cat bootloader.bin kernel.bin > boot.bin
+kernel.o: kernel.c
+	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
 
-run: build
-	$(QEMU) -drive file=boot.bin,index=0,if=floppy,format=raw
+kernel.elf: boot.o kernel.o linker.ld
+	$(LD) $(LDFLAGS) -o kernel.elf boot.o kernel.o
+	-$(OBJCOPY) --remove-section .note.gnu.build-id kernel.elf 2>/dev/null || true
+
+iso/boot/grub/grub.cfg:
+	mkdir -p iso/boot/grub
+	cp grub.cfg iso/boot/grub/grub.cfg
+
+os.iso: kernel.elf iso/boot/grub/grub.cfg
+	mkdir -p iso/boot
+	cp kernel.elf iso/boot/kernel.elf
+	$(GRUBMKRESCUE) -o os.iso iso
+
+run: os.iso
+	qemu-system-i386 -m 512 -cdrom os.iso -boot d -no-reboot -serial stdio
 
 clean:
-	rm -f *.bin *.elf *.o
+	rm -f *.o kernel.elf os.iso
+	rm -rf iso
 
-.PHONY: all build run clean
+.PHONY: all run clean
